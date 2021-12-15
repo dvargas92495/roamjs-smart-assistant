@@ -1,64 +1,98 @@
-import { toConfig, runExtension, getAllPageNames } from "roam-client";
-import { createConfigObserver } from "roamjs-components";
+import toConfig from "roamjs-components/util/toConfigPageName";
+import runExtension from "roamjs-components/util/runExtension";
+import getSubTree from "roamjs-components/util/getSubTree";
+import toFlexRegex from "roamjs-components/util/toFlexRegex";
+import getSettingIntFromTree from "roamjs-components/util/getSettingIntFromTree";
+import getAllPageNames from "roamjs-components/queries/getAllPageNames";
+import getBasicTreeByParentUid from "roamjs-components/queries/getBasicTreeByParentUid";
+import getPageUidByPageTitle from "roamjs-components/queries/getPageUidByPageTitle";
+import { createConfigObserver } from "roamjs-components/components/ConfigPage";
+import { render as unlinkFinderRender } from "./components/UnlinkFinderLegend";
+import addStyle from "roamjs-components/dom/addStyle";
 
 let unlinkFinderElementToLink = null;
 let unlinkFinderBackdrop = null;
 let unlinkFinderMenu = null;
 let unlinkFinderMenuOptions = null;
 let unlinkFinderMenuVisible = false;
-const aliasWordMatchStyle = "rgba(125, 188, 255, 0.6)";
-const exactWordMatchStyle = "rgba(71,151, 101, 0.4)";
-const fuzzyWordMatchStyle = "rgba(220, 171, 121, 0.6)";
-const partialWordMatchStyle = "rgba(229, 233, 236, 1.0)";
-const redundantWordMatchStyle = "rgba(168, 42, 42, 0.4)";
+addStyle(`#unlink-finder-legend {
+  margin-left: 4px;
+  border-style: groove;
+}`);
 
 const ID = "smart-assistant";
 const CONFIG = toConfig(ID);
 runExtension(ID, () => {
-  createConfigObserver({ title: CONFIG, config: { tabs: [] } });
+  createConfigObserver({
+    title: CONFIG,
+    config: {
+      tabs: [
+        {
+          id: "unlink finder",
+          fields: [
+            {
+              title: "minimum characters",
+              type: "number",
+              description:
+                "Minimum number of characters to detect an unlink finder match",
+            },
+            {
+              title: "alias case sensitive",
+              type: "flag",
+              description: "Whether alias matching should be case sensitive",
+            },
+          ],
+        },
+      ],
+    },
+  });
   window.roamAlphaAPI.ui.commandPalette.addCommand({
     label: "Open Unlink Finder",
     callback: () => {
       const unlinkFinderPages = getAllPageNames().sort(function (a, b) {
         return b.length - a.length;
       });
-      console.log(unlinkFinderPages.length)
-      /*
-      unlinkFinderAliases = getAllAliases();
-      unlinkFinderConfig = getConfigFromPage("Unlink Finder");
-      if (unlinkFinderConfig["Minimum Characters"]) {
-        minimumPageLength = parseInt(unlinkFinderConfig["Minimum Characters"]);
-      } else {
-        minimumPageLength = 2;
+      const unlinkFinderAliases = Object.fromEntries(
+        window.roamAlphaAPI
+          .q(
+            `[:find (pull ?parentPage [:node/title]) (pull ?referencingBlock [:block/string])
+                :where [?referencedPage :node/title "Aliases"] 
+                       [?referencingBlock :block/refs ?referencedPage]
+                       [?referencingBlock :block/page ?parentPage]
+               ]`
+          )
+          .map((p) => ({
+            title: p[0].title as string,
+            aliases: (p[1].string as string)
+              .replace(/^Aliases::/, "")
+              .split(",")
+              .map((a) => a.trim())
+              .filter((a) => !!a),
+          }))
+          .flatMap((p) => p.aliases.map((a) => [a, p.title]))
+      );
+      const config = getBasicTreeByParentUid(
+        getPageUidByPageTitle("roam/js/discourse-graph")
+      );
+      const unlinkFinderConfig = getSubTree({
+        tree: config,
+        key: "unlink finder",
+      }).children;
+      const minimumPageLength = getSettingIntFromTree({
+        tree: unlinkFinderConfig,
+        key: "Minimum Characters",
+        defaultValue: 2,
+      });
+      const aliasCaseSensitive = unlinkFinderConfig.some((t) =>
+        toFlexRegex("Alias case sensitive").test(t.text)
+      );
+      if (!document.getElementById("unlink-finder-legend")) {
+        unlinkFinderRender();
       }
-      if (unlinkFinderConfig["Alias Case-Sensitive"] == "Y") {
-        aliasCaseSensitive = true;
-      } else {
-        aliasCaseSensitive = false;
-      }
-      matchFound = false;
-
-      if (
-        document.getElementById("unlink-finder-icon").getAttribute("status") ==
-        "off"
-      ) {
-        document
-          .getElementById("unlink-finder-icon")
-          .setAttribute("status", "on");
-        addUnlinkFinderLegend();
-        reAddUnlinkTargets();
-        do {
-          let blocks = document.getElementsByClassName("roam-block");
-          matchFound = findTargetNodes(
-            blocks,
-            unlinkFinderPages,
-            unlinkFinderAliases
-          );
-        } while (matchFound == true);
-        document.addEventListener("blur", runUnlinkFinder, true);
-        window.addEventListener("locationchange", runUnlinkFinder, true);
-        addContextMenuListener();
-      } else {
+    },
+  });
+  /*
+  turn off unlink finder
         document
           .getElementById("unlink-finder-icon")
           .setAttribute("status", "off");
@@ -66,10 +100,7 @@ runExtension(ID, () => {
         removeUnlinkTargets();
         document.removeEventListener("blur", runUnlinkFinder, true);
         window.removeEventListener("locationchange", runUnlinkFinder, true);
-      }
-      */
-    },
-  });
+        */
   // createCustomContextMenu();
   // unlinkFinderBackdrop = document.querySelector(
   //   ".unlink-finder-context-backdrop"
