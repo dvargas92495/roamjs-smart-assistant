@@ -53,7 +53,15 @@ const textNodesUnder = (inputNode: Node) => {
   return all;
 };
 
-const UnlinkFinderLegend = () => {
+type Props = {
+  minimumPageLength: number;
+  aliasCaseSensitive: boolean;
+};
+
+const UnlinkFinderLegend = ({
+  minimumPageLength,
+  aliasCaseSensitive,
+}: Props) => {
   useEffect(() => {
     const [obs] = createBlockObserver((b) => {
       const textNodes = textNodesUnder(b);
@@ -100,13 +108,13 @@ const UnlinkFinderLegend = () => {
   );
 };
 
-export const render = () => {
+export const render = (props: Props) => {
   const unlinkFinderLegend = document.createElement("div");
   unlinkFinderLegend.classList.add("unlink-finder-legend");
   unlinkFinderLegend.id = "unlink-finder-legend";
   const roamTopbar = document.querySelector(".rm-topbar");
   roamTopbar.insertBefore(unlinkFinderLegend, roamTopbar.childNodes[2]);
-  ReactDOM.render(<UnlinkFinderLegend />, unlinkFinderLegend);
+  ReactDOM.render(<UnlinkFinderLegend {...props} />, unlinkFinderLegend);
 };
 
 export default UnlinkFinderLegend;

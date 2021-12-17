@@ -9,6 +9,10 @@ import getPageUidByPageTitle from "roamjs-components/queries/getPageUidByPageTit
 import { createConfigObserver } from "roamjs-components/components/ConfigPage";
 import { render as unlinkFinderRender } from "./components/UnlinkFinderLegend";
 import addStyle from "roamjs-components/dom/addStyle";
+import createHTMLObserver from "roamjs-components/dom/createHTMLObserver";
+import getUids from "roamjs-components/dom/getUids";
+import { PullBlock } from "roamjs-components/types";
+import { render as smartPopupRender } from "./components/SmartPopup";
 
 let unlinkFinderElementToLink = null;
 let unlinkFinderBackdrop = null;
@@ -23,7 +27,7 @@ addStyle(`#unlink-finder-legend {
 const ID = "smart-assistant";
 const CONFIG = toConfig(ID);
 runExtension(ID, () => {
-  createConfigObserver({
+  const { pageUid } = createConfigObserver({
     title: CONFIG,
     config: {
       tabs: [
@@ -87,7 +91,10 @@ runExtension(ID, () => {
         toFlexRegex("Alias case sensitive").test(t.text)
       );
       if (!document.getElementById("unlink-finder-legend")) {
-        unlinkFinderRender();
+        unlinkFinderRender({
+          minimumPageLength,
+          aliasCaseSensitive,
+        });
       }
     },
   });
@@ -110,4 +117,45 @@ runExtension(ID, () => {
   //   ".unlink-finder-context-menu-option"
   // );
   // setupUnlinkFinderContextMenu();
+  const blocksWatched: {
+    [uid: string]: {
+      pattern: string;
+      entityId: string;
+      callback: (before: PullBlock, after: PullBlock) => void;
+    };
+  } = {};
+  createHTMLObserver({
+    tag: "TEXTAREA",
+    className: "rm-block-input",
+    callback: (t: HTMLTextAreaElement) => {
+      const { blockUid } = getUids(t);
+      if (!blocksWatched[blockUid]) {
+        const pattern = "[:block/string]";
+        const entityId = `[:block/uid "${blockUid}"]`;
+        const injectBlockChanges = smartPopupRender({ t, blockUid });
+        blocksWatched[blockUid] = {
+          pattern,
+          entityId,
+          callback: (_, after) => {
+            injectBlockChanges.current(after[":block/string"]);
+          },
+        };
+        window.roamAlphaAPI.data.addPullWatch(
+          pattern,
+          entityId,
+          blocksWatched[blockUid].callback
+        );
+      } else {
+        console.log('im here already')
+      }
+    },
+    removeCallback: (t: HTMLTextAreaElement) => {
+      const { blockUid } = getUids(t);
+      if (blocksWatched[blockUid]) {
+        const { pattern, entityId, callback } = blocksWatched[blockUid];
+        window.roamAlphaAPI.data.removePullWatch(pattern, entityId, callback);
+        delete blocksWatched[blockUid];
+      }
+    },
+  });
 });
