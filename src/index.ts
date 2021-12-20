@@ -53,10 +53,15 @@ runExtension(ID, () => {
   window.roamAlphaAPI.ui.commandPalette.addCommand({
     label: "Open Unlink Finder",
     callback: () => {
-      const unlinkFinderPages = getAllPageNames().sort(function (a, b) {
-        return b.length - a.length;
-      });
-      const unlinkFinderAliases = Object.fromEntries(
+      const pages = window.roamAlphaAPI
+        .q("[:find ?s (pull ?e [:block/uid]) :where [?e :node/title ?s]]")
+        .map((b) => ({ title: b[0] as string, uid: b[1].uid as string }))
+        .sort(function ({ title: a }, { title: b }) {
+          return a.length === b.length
+            ? a.localeCompare(b)
+            : b.length - a.length;
+        });
+      const aliases = Object.fromEntries(
         window.roamAlphaAPI
           .q(
             `[:find (pull ?parentPage [:node/title]) (pull ?referencingBlock [:block/string])
@@ -94,20 +99,12 @@ runExtension(ID, () => {
         unlinkFinderRender({
           minimumPageLength,
           aliasCaseSensitive,
+          pages,
+          aliases,
         });
       }
     },
   });
-  /*
-  turn off unlink finder
-        document
-          .getElementById("unlink-finder-icon")
-          .setAttribute("status", "off");
-        removeUnlinkFinderLegend();
-        removeUnlinkTargets();
-        document.removeEventListener("blur", runUnlinkFinder, true);
-        window.removeEventListener("locationchange", runUnlinkFinder, true);
-        */
   // createCustomContextMenu();
   // unlinkFinderBackdrop = document.querySelector(
   //   ".unlink-finder-context-backdrop"
@@ -146,7 +143,7 @@ runExtension(ID, () => {
           blocksWatched[blockUid].callback
         );
       } else {
-        console.log('im here already')
+        console.log("im here already");
       }
     },
     removeCallback: (t: HTMLTextAreaElement) => {

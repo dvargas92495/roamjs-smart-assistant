@@ -1,39 +1,59 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import ReactDOM from "react-dom";
 import createBlockObserver from "roamjs-components/dom/createBlockObserver";
+import { Button } from "@blueprintjs/core";
+import addStyle from "roamjs-components/dom/addStyle";
 
-const aliasWordMatchStyle = "rgba(125, 188, 255, 0.6)";
-const exactWordMatchStyle = "rgba(71,151, 101, 0.4)";
-const fuzzyWordMatchStyle = "rgba(220, 171, 121, 0.6)";
-const partialWordMatchStyle = "rgba(229, 233, 236, 1.0)";
-const redundantWordMatchStyle = "rgba(168, 42, 42, 0.4)";
+addStyle(`.alias-word-match {
+  position: relative;
+  background: rgba(125, 188, 255, 0.6);
+}
+.exact-word-match { 
+  position: relative;
+  background: rgba(71,151, 101, 0.4);
+}
+.fuzzy-word-match {
+  position: relative;
+  background: rgba(220, 171, 121, 0.6);
+}
 
-const LegendElement = ({
-  matchType,
-  matchStyle,
-  matchText,
-}: {
-  matchType: string;
-  matchStyle: string;
-  matchText: string;
-}) => {
+.partial-word-match { 
+  position: relative;
+  background: rgba(229, 233, 236, 1.0);
+}
+
+.redundant-word-match { 
+  position: relative;
+  background: rgba(168, 42, 42, 0.4);
+}
+`);
+
+const LegendElement = ({ matchType }: { matchType: string }) => {
+  const matchClass = useMemo(
+    () => `${matchType.toLowerCase()}-word-match`,
+    [matchType]
+  );
   useEffect(() => {
     document
-      .querySelectorAll<HTMLElement>(`${matchType}-inactive`)
+      .querySelectorAll<HTMLElement>(`${matchClass}-inactive`)
       .forEach((el) => {
-        el.classList.remove(`${matchType}-inactive`);
-        el.classList.add(matchType);
-        el.style.position = `relative`;
-        el.style.background = matchStyle;
+        el.classList.remove(`${matchClass}-inactive`);
+        el.classList.add(matchClass);
       });
-  }, [matchType, matchStyle]);
+    return () => {
+      document.querySelectorAll<HTMLElement>(matchClass).forEach((el) => {
+        el.classList.add(`${matchClass}-inactive`);
+        el.classList.remove(matchClass);
+      });
+    };
+  }, [matchClass]);
   return (
     <span
-      className={`unlink-finder-legend unlink-finder ${matchType}`}
+      className={`unlink-finder-legend unlink-finder ${matchClass}`}
       data-text="Actual Page Name"
-      style={{ marginRight: 4, position: "relative", background: matchStyle }}
+      style={{ marginRight: 4 }}
     >
-      {matchText}
+      {matchType}
     </span>
   );
 };
@@ -44,33 +64,191 @@ const textNodesUnder = (inputNode: Node) => {
     const el = node as HTMLElement;
     if (node.nodeType === 3) all.push(node);
     else if (
-      el.hasAttribute("data-link-title") ||
-      el.hasAttribute("data-tag") ||
-      el.hasAttribute("recommend")
+      !(
+        el.hasAttribute("data-link-title") ||
+        el.hasAttribute("data-tag") ||
+        el.hasAttribute("recommend")
+      )
     )
       all = all.concat(textNodesUnder(node));
   }
   return all;
 };
 
+const pageTaggedInParent = (node: Node, page: string) => {
+  let parent = node.parentElement;
+  while (parent.classList.contains("roam-article") == false) {
+    parent = parent.parentElement;
+    if (parent.hasAttribute("data-page-links")) {
+      const linkedPages = JSON.parse(parent.getAttribute("data-page-links"));
+      if (linkedPages.includes(page)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
 type Props = {
   minimumPageLength: number;
   aliasCaseSensitive: boolean;
+  pages: { title: string; uid: string }[];
+  aliases: Record<string, string>;
 };
 
 const UnlinkFinderLegend = ({
   minimumPageLength,
   aliasCaseSensitive,
+  aliases,
+  pages,
 }: Props) => {
+  const flags = aliasCaseSensitive ? "" : "i";
   useEffect(() => {
     const [obs] = createBlockObserver((b) => {
       const textNodes = textNodesUnder(b);
-      console.log(textNodes.length);
-      // textNodes.forEach(spanWrapper)
+      textNodes.forEach((node) => {
+        try {
+          Object.entries(aliases)
+            .filter(([key]) =>
+              /^\w+$/.test(key)
+                ? new RegExp(`(^|[^-])\\b${key}\\b($|[^-])`, flags).test(
+                    node.textContent
+                  )
+                : new RegExp(key, flags).test(node.textContent)
+            )
+            .forEach(([key, value]) => {
+              const start = node.textContent
+                .toLowerCase()
+                .indexOf(key.toLowerCase());
+              const end = start + key.length;
+              const beforeLinkText = node.textContent.slice(0, start);
+              const linkText = node.textContent.slice(start, end);
+              const afterLinkText = node.textContent.slice(end);
+              // create span with page name
+              var matchSpan = document.createElement("span");
+              matchSpan.classList.add("unlink-finder");
+              matchSpan.setAttribute("data-text", value);
+              matchSpan.classList.add("alias-word-match");
+              matchSpan.setAttribute("recommend", "underline");
+              matchSpan.innerText = linkText;
+              // truncate existing text node
+              node.textContent = beforeLinkText;
+              // add that span after the text node
+              node.parentNode.insertBefore(matchSpan, node.nextSibling);
+              // create a text node with the remainder text
+              const remainderText = document.createTextNode(afterLinkText);
+              // add that remainder text after inserted node
+              node.parentNode.insertBefore(
+                remainderText,
+                node.nextSibling.nextSibling
+              );
+            });
+          pages
+            .filter(
+              ({ title }) =>
+                title.length < minimumPageLength &&
+                node.textContent.toLowerCase().includes(title.toLowerCase())
+            )
+            .forEach((page) => {
+              const start = node.textContent
+                .toLowerCase()
+                .indexOf(page.title.toLowerCase());
+              const end = start + page.title.length;
+              const beforeLinkText = node.textContent.slice(0, start);
+              const firstCharBeforeMatch = node.textContent.slice(start - 1)[0];
+              const firstCharAfterMatch = node.textContent
+                .slice(start)
+                .substr(page.title.length)[0];
+              const linkText = node.textContent.slice(start, end);
+              const afterLinkText = node.textContent.slice(end);
+              // create span with page name
+              const matchSpan = document.createElement("span");
+              matchSpan.classList.add("unlink-finder");
+              matchSpan.classList.add("exact-word-match");
+              matchSpan.setAttribute("recommend", "underline");
+              matchSpan.setAttribute("data-text", page.title);
+              if (linkText != page.title) {
+                matchSpan.classList.add("fuzzy-word-match");
+                matchSpan.classList.remove("exact-word-match");
+              }
+              if (
+                (![
+                  ".",
+                  " ",
+                  ",",
+                  "!",
+                  "?",
+                  "_",
+                  "/",
+                  ":",
+                  ";",
+                  "'",
+                  '"',
+                  "@",
+                  ")",
+                  "(",
+                  "{",
+                  "}",
+                  "[",
+                  "]",
+                  "^",
+                  "*",
+                  "#",
+                ].includes(firstCharAfterMatch) &&
+                  end != node.textContent.length) ||
+                (![
+                  ".",
+                  " ",
+                  ",",
+                  "!",
+                  "?",
+                  "_",
+                  "/",
+                  ":",
+                  ";",
+                  "'",
+                  '"',
+                  "@",
+                  ")",
+                  "(",
+                  "{",
+                  "}",
+                  "[",
+                  "]",
+                  "^",
+                  "*",
+                  "#",
+                ].includes(firstCharBeforeMatch) &&
+                  start != 0)
+              ) {
+                matchSpan.classList.add("partial-word-match");
+                matchSpan.classList.remove("exact-word-match");
+              }
+              if (pageTaggedInParent(node, page.title) == true) {
+                matchSpan.classList.add("redundant-word-match");
+                matchSpan.classList.remove("exact-word-match");
+              }
+              matchSpan.innerText = linkText;
+              // truncate existing text node
+              node.textContent = beforeLinkText;
+              // add that span after the text node
+              node.parentNode.insertBefore(matchSpan, node.nextSibling);
+              // create a text node with the remainder text
+              const remainderText = document.createTextNode(afterLinkText);
+              // add that remainder text after inserted node
+              node.parentNode.insertBefore(
+                remainderText,
+                node.nextSibling.nextSibling
+              );
+            });
+        } catch (err) {
+          return false;
+        }
+      });
       // addContextMenuListener();
     });
     return () => obs.disconnect();
-  });
+  }, []);
   return (
     <>
       <span
@@ -79,30 +257,19 @@ const UnlinkFinderLegend = ({
       >
         Match Types:{" "}
       </span>
-      <LegendElement
-        matchType="alias-word-match"
-        matchStyle={aliasWordMatchStyle}
-        matchText="Alias"
-      />
-      <LegendElement
-        matchType="exact-word-match"
-        matchStyle={exactWordMatchStyle}
-        matchText="Exact"
-      />
-      <LegendElement
-        matchType="fuzzy-word-match"
-        matchStyle={fuzzyWordMatchStyle}
-        matchText="Fuzzy"
-      />
-      <LegendElement
-        matchType="partial-word-match"
-        matchStyle={partialWordMatchStyle}
-        matchText="Partial"
-      />
-      <LegendElement
-        matchType="redundant-word-match"
-        matchStyle={redundantWordMatchStyle}
-        matchText="Redundant"
+      <LegendElement matchType="Alias" />
+      <LegendElement matchType="Exact" />
+      <LegendElement matchType="Fuzzy" />
+      <LegendElement matchType="Partial" />
+      <LegendElement matchType="Redundant" />
+      <Button
+        icon={"cross"}
+        minimal
+        onClick={() => {
+          const root = document.getElementById("unlink-finder-legend");
+          ReactDOM.unmountComponentAtNode(root);
+          root.remove();
+        }}
       />
     </>
   );
