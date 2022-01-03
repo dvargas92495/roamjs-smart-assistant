@@ -1,17 +1,22 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom";
-import { Card, Button } from "@blueprintjs/core";
+import { Card } from "@blueprintjs/core";
 import updateBlock from "roamjs-components/writes/updateBlock";
+
+type Props = {
+  textarea: HTMLTextAreaElement;
+  blockUid: string;
+  resultsPerPage: number;
+};
 
 const SmartPopup = ({
   onChangeRef,
   blockUid,
   textarea,
+  resultsPerPage,
 }: {
   onChangeRef: { current: (s: string) => void };
-  blockUid: string;
-  textarea: HTMLTextAreaElement;
-}) => {
+} & Props) => {
   const [query, setQuery] = useState("");
   const [alt, setAlt] = useState(false);
   const cache = useMemo<{ [uid: string]: { text: string; uid: string }[] }>(
@@ -35,7 +40,7 @@ const SmartPopup = ({
               text,
             }))
             .filter(({ uid }) => uid !== blockUid)
-            .slice(0, 5))
+            .slice(0, resultsPerPage))
         : [],
     [query, blockUid]
   );
@@ -95,19 +100,13 @@ const SmartPopup = ({
   );
 };
 
-export const render = ({
-  t,
-  blockUid,
-}: {
-  t: HTMLTextAreaElement;
-  blockUid: string;
-}) => {
-  const parent = t.parentElement;
+export const render = (props: Props) => {
+  const parent = props.textarea.parentElement;
   const container = document.createElement("div");
   parent.appendChild(container);
   const onChangeRef = { current: (_: string) => {} };
   ReactDOM.render(
-    <SmartPopup onChangeRef={onChangeRef} blockUid={blockUid} textarea={t} />,
+    <SmartPopup onChangeRef={onChangeRef} {...props} />,
     container
   );
   return onChangeRef;
