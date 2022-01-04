@@ -1,13 +1,16 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import { Card } from "@blueprintjs/core";
 import updateBlock from "roamjs-components/writes/updateBlock";
+import isControl from "roamjs-components/util/isControl";
 
 type Props = {
   textarea: HTMLTextAreaElement;
   blockUid: string;
   resultsPerPage: number;
 };
+
+const BLOCK_TEXT_LENGTH_MAX = 250;
 
 const SmartPopup = ({
   onChangeRef,
@@ -18,11 +21,14 @@ const SmartPopup = ({
   onChangeRef: { current: (s: string) => void };
 } & Props) => {
   const [query, setQuery] = useState("");
-  const [alt, setAlt] = useState(false);
+  const [isActionMode, setIsActionMode] = useState(false);
+  const actionModeRef = useRef(false);
   const cache = useMemo<{ [uid: string]: { text: string; uid: string }[] }>(
     () => ({}),
     []
   );
+  const [excludedUids, setExcludedUids] = useState(new Set(blockUid));
+  const excludedUidsRef = useRef(excludedUids);
   const results = useMemo(
     () =>
       query
@@ -39,44 +45,61 @@ const SmartPopup = ({
               uid,
               text,
             }))
-            .filter(({ uid }) => uid !== blockUid)
+            .filter(({ uid }) => !excludedUids.has(uid))
             .slice(0, resultsPerPage))
         : [],
-    [query, blockUid]
+    [query, blockUid, excludedUids]
   );
   useEffect(() => {
     onChangeRef.current = (s) => {
       setQuery(s);
     };
     textarea.addEventListener("keydown", (e) => {
-      if (e.key === "Alt") {
-        setAlt(true);
-      } else {
+      if (isControl(e) && (e.key === "m" || e.code === "KeyM") && !e.shiftKey) {
+        setIsActionMode(!actionModeRef.current);
+        actionModeRef.current = !actionModeRef.current;
+      } else if (actionModeRef.current) {
         const key = Number(e.key);
-        if (e.altKey && !isNaN(key)) {
+        if (!isNaN(key)) {
           const result = document.getElementById(
             "roamjs-smart-assistant-results"
           ).children[key - 1];
           if (result) {
             const { selectionStart, selectionEnd } = textarea;
             const oldText = textarea.value;
+            const location = window.roamAlphaAPI.ui.getFocusedBlock();
+            const dataUid = result.getAttribute("data-uid");
             updateBlock({
               uid: blockUid,
               text: `${oldText.slice(
                 0,
                 Math.min(selectionStart, selectionEnd)
-              )}((${result.getAttribute("data-uid")}))${oldText.slice(
+              )}((${dataUid}))${oldText.slice(
                 Math.max(selectionStart, selectionEnd)
               )}`,
+            }).then(() => {
+              window.roamAlphaAPI.ui.setBlockFocusAndSelection({
+                location,
+                selection: {start: selectionStart + dataUid.length + 4},
+              });
+              excludedUidsRef.current.add(dataUid);
+              setExcludedUids(excludedUidsRef.current);
             });
           }
         }
+        e.preventDefault();
+        e.stopPropagation();
       }
     });
-    textarea.addEventListener("keyup", (e) => {
-      setAlt(e.altKey);
-    });
-  }, [onChangeRef, textarea, setQuery, setAlt, blockUid]);
+  }, [
+    onChangeRef,
+    textarea,
+    setQuery,
+    setIsActionMode,
+    actionModeRef,
+    excludedUidsRef,
+    blockUid,
+  ]);
   return (
     <Card
       style={{
@@ -84,15 +107,18 @@ const SmartPopup = ({
         display: !query ? "none" : "block",
       }}
     >
-      <h4>
-        Searching blocks related to <i>{query.slice(0, 20)}</i>
-        {query ? "..." : ""}
-      </h4>
+      <h4>Searching Related Blocks</h4>
       <div id={"roamjs-smart-assistant-results"}>
         {results.map((r, i) => (
-          <div key={r.uid} data-uid={r.uid}>
-            <span>{alt ? `${i + 1} ` : "-> "}</span>
-            <span>{r.text}</span>
+          <div key={r.uid} data-uid={r.uid} style={{ display: "flex" }}>
+            <span style={{ display: "inline-block", height: "100%", minWidth: 32 }}>
+              {isActionMode ? `${i + 1} ` : "-> "}
+            </span>
+            <span>
+              {r.text.length > BLOCK_TEXT_LENGTH_MAX
+                ? `${r.text.slice(0, BLOCK_TEXT_LENGTH_MAX - 3)}...`
+                : r.text}
+            </span>
           </div>
         ))}
       </div>

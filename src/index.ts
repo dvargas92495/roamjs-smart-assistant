@@ -6,6 +6,7 @@ import createHTMLObserver from "roamjs-components/dom/createHTMLObserver";
 import getUids from "roamjs-components/dom/getUids";
 import { PullBlock } from "roamjs-components/types";
 import { render as smartPopupRender } from "./components/SmartPopup";
+import SearchAlgorithmsPanel from "./components/SearchAlgorithmsPanel";
 import getSubTree from "roamjs-components/util/getSubTree";
 import getSettingIntFromTree from "roamjs-components/util/getSettingIntFromTree";
 
@@ -29,6 +30,14 @@ runExtension(ID, () => {
               type: "number",
               description: "Number of results that appear per page",
               defaultValue: 5,
+            },
+            {
+              title: "search algorithms",
+              type: "custom",
+              description: "The set of algorithms that Smart Popup uses to display block suggestions",
+              options: {
+                component: SearchAlgorithmsPanel,
+              },
             },
           ],
         },
