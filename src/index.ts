@@ -34,7 +34,8 @@ runExtension(ID, () => {
             {
               title: "search algorithms",
               type: "custom",
-              description: "The set of algorithms that Smart Popup uses to display block suggestions",
+              description:
+                "The set of algorithms that Smart Popup uses to display block suggestions",
               options: {
                 component: SearchAlgorithmsPanel,
               },
@@ -52,6 +53,10 @@ runExtension(ID, () => {
       tree: smartPopupConfig,
       key: "results per page",
       defaultValue: 5,
+    });
+    const algorithms = getSubTree({
+      tree: smartPopupConfig,
+      key: "search algorithms",
     });
     const blocksWatched: {
       [uid: string]: {
@@ -72,6 +77,13 @@ runExtension(ID, () => {
             textarea: t,
             blockUid,
             resultsPerPage,
+            algorithms: algorithms.children.map(
+              ({ text, uid, children = [] }) => ({
+                text,
+                uid,
+                fields: children.map((t) => t.text),
+              })
+            ),
           });
           blocksWatched[blockUid] = {
             pattern,

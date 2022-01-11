@@ -8,6 +8,7 @@ type Props = {
   textarea: HTMLTextAreaElement;
   blockUid: string;
   resultsPerPage: number;
+  algorithms: { fields: string[]; text: string; uid: string }[];
 };
 
 const BLOCK_TEXT_LENGTH_MAX = 250;
@@ -80,7 +81,7 @@ const SmartPopup = ({
             }).then(() => {
               window.roamAlphaAPI.ui.setBlockFocusAndSelection({
                 location,
-                selection: {start: selectionStart + dataUid.length + 4},
+                selection: { start: selectionStart + dataUid.length + 4 },
               });
               excludedUidsRef.current.add(dataUid);
               setExcludedUids(excludedUidsRef.current);
@@ -111,7 +112,9 @@ const SmartPopup = ({
       <div id={"roamjs-smart-assistant-results"}>
         {results.map((r, i) => (
           <div key={r.uid} data-uid={r.uid} style={{ display: "flex" }}>
-            <span style={{ display: "inline-block", height: "100%", minWidth: 32 }}>
+            <span
+              style={{ display: "inline-block", height: "100%", minWidth: 32 }}
+            >
               {isActionMode ? `${i + 1} ` : "-> "}
             </span>
             <span>
