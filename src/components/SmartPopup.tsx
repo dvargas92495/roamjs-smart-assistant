@@ -3,12 +3,15 @@ import ReactDOM from "react-dom";
 import { Card } from "@blueprintjs/core";
 import updateBlock from "roamjs-components/writes/updateBlock";
 import isControl from "roamjs-components/util/isControl";
+import { runAlgorithm } from "./SearchAlgorithmsPanel";
+import { getRoamUrlByPage } from "roamjs-components";
 
 type Props = {
   textarea: HTMLTextAreaElement;
   blockUid: string;
   resultsPerPage: number;
   algorithms: { fields: string[]; text: string; uid: string }[];
+  frequency: string;
 };
 
 const BLOCK_TEXT_LENGTH_MAX = 250;
@@ -18,9 +21,13 @@ const SmartPopup = ({
   blockUid,
   textarea,
   resultsPerPage,
+  algorithms,
+  frequency,
 }: {
   onChangeRef: { current: (s: string) => void };
 } & Props) => {
+  const [disabled, setDisabled] = useState(frequency !== "always");
+  const disabledRef = useRef(disabled);
   const [query, setQuery] = useState("");
   const [isActionMode, setIsActionMode] = useState(false);
   const actionModeRef = useRef(false);
@@ -30,35 +37,44 @@ const SmartPopup = ({
   );
   const [excludedUids, setExcludedUids] = useState(new Set(blockUid));
   const excludedUidsRef = useRef(excludedUids);
-  const results = useMemo(
+  const [results, setResults] = useState([]);
+  useEffect(() => {
+    if (!query) {
+      setResults([]);
+    } else if (cache[query]) {
+      setResults(cache[query]);
+    } else {
+      Promise.all(
+        algorithms.map((a) =>
+          runAlgorithm({ name: a.text, params: a.fields, text: query })
+        )
+      ).then((res) => setResults((cache[query] = res.flat())));
+    }
+  }, [query, blockUid, excludedUids, algorithms]);
+  const resultsInView = useMemo(
     () =>
-      query
-        ? cache[query] ||
-          (cache[query] = window.roamAlphaAPI
-            .q(
-              `[:find ?contents (pull ?block [:block/uid]) :where [?block :block/string ?contents] (or ${query
-                .split(/\s/)
-                .filter((s) => !!s.trim())
-                .map((t) => `[(clojure.string/includes? ?contents  "${t}")]`)
-                .join(" ")})]`
-            )
-            .map(([text, { uid }]: [string, { uid: string }]) => ({
-              uid,
-              text,
-            }))
-            .filter(({ uid }) => !excludedUids.has(uid))
-            .slice(0, resultsPerPage))
-        : [],
-    [query, blockUid, excludedUids]
+      results
+        .filter(({ uid }) => !excludedUids.has(uid))
+        .slice(0, resultsPerPage),
+    [results, resultsPerPage, excludedUids]
   );
   useEffect(() => {
     onChangeRef.current = (s) => {
       setQuery(s);
     };
     textarea.addEventListener("keydown", (e) => {
-      if (isControl(e) && (e.key === "m" || e.code === "KeyM") && !e.shiftKey) {
-        setIsActionMode(!actionModeRef.current);
-        actionModeRef.current = !actionModeRef.current;
+      if (isControl(e) && (e.key === "m" || e.code === "KeyM")) {
+        if (!e.shiftKey) {
+          setIsActionMode(!actionModeRef.current);
+          actionModeRef.current = !actionModeRef.current;
+          e.preventDefault();
+          e.stopPropagation();
+        } else if (frequency === "hotkey") {
+          setDisabled(!disabledRef.current);
+          disabledRef.current = !disabledRef.current;
+          e.preventDefault();
+          e.stopPropagation();
+        }
       } else if (actionModeRef.current) {
         const key = Number(e.key);
         if (!isNaN(key)) {
@@ -100,31 +116,61 @@ const SmartPopup = ({
     actionModeRef,
     excludedUidsRef,
     blockUid,
+    frequency,
+    disabledRef,
+    setDisabled
   ]);
   return (
     <Card
       style={{
         transition: "display 0.25s ease-in",
-        display: !query ? "none" : "block",
+        display: disabled || !query ? "none" : "block",
       }}
     >
-      <h4>Searching Related Blocks</h4>
-      <div id={"roamjs-smart-assistant-results"}>
-        {results.map((r, i) => (
-          <div key={r.uid} data-uid={r.uid} style={{ display: "flex" }}>
-            <span
-              style={{ display: "inline-block", height: "100%", minWidth: 32 }}
-            >
-              {isActionMode ? `${i + 1} ` : "-> "}
-            </span>
-            <span>
-              {r.text.length > BLOCK_TEXT_LENGTH_MAX
-                ? `${r.text.slice(0, BLOCK_TEXT_LENGTH_MAX - 3)}...`
-                : r.text}
-            </span>
+      {algorithms.length ? (
+        <>
+          <h4>Searching Related Blocks</h4>
+          <div id={"roamjs-smart-assistant-results"}>
+            {resultsInView.length
+              ? resultsInView.map((r, i) => (
+                  <div key={r.uid} data-uid={r.uid} style={{ display: "flex" }}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        height: "100%",
+                        minWidth: 32,
+                      }}
+                    >
+                      {isActionMode ? `${i + 1} ` : "-> "}
+                    </span>
+                    <span>
+                      {r.text.length > BLOCK_TEXT_LENGTH_MAX
+                        ? `${r.text.slice(0, BLOCK_TEXT_LENGTH_MAX - 3)}...`
+                        : r.text}
+                    </span>
+                  </div>
+                ))
+              : "No related blocks found"}
           </div>
-        ))}
-      </div>
+        </>
+      ) : (
+        <>
+          <h4>No Algorithms Configured</h4>
+          <div>
+            Head to the{" "}
+            <a
+              onClick={() =>
+                window.roamAlphaAPI.ui.mainWindow.openPage({
+                  page: { title: "roam/js/smart-assistant" },
+                })
+              }
+            >
+              roam/js/smart-assistant
+            </a>{" "}
+            page to add one.
+          </div>
+        </>
+      )}
     </Card>
   );
 };

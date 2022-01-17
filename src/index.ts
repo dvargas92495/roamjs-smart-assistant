@@ -9,6 +9,8 @@ import { render as smartPopupRender } from "./components/SmartPopup";
 import SearchAlgorithmsPanel from "./components/SearchAlgorithmsPanel";
 import getSubTree from "roamjs-components/util/getSubTree";
 import getSettingIntFromTree from "roamjs-components/util/getSettingIntFromTree";
+import isControl from "roamjs-components/util/isControl";
+import { getSettingValueFromTree } from "roamjs-components";
 
 addStyle(`#unlink-finder-legend {
   margin-left: 4px;
@@ -35,9 +37,27 @@ runExtension(ID, () => {
               title: "search algorithms",
               type: "custom",
               description:
-                "The set of algorithms that Smart Popup uses to display block suggestions",
+                "The set of algorithms that Smart Popup uses to display block suggestions. Changing requires refreshing",
               options: {
                 component: SearchAlgorithmsPanel,
+              },
+            },
+            {
+              title: "frequency",
+              type: "select",
+              description:
+                "How often should the Smart Popup appear below your blocks. Changing requires refreshing",
+              defaultValue: "always",
+              options: {
+                items: [
+                  "always",
+                  `hotkey (${
+                    isControl(new KeyboardEvent("keyup", { ctrlKey: true }))
+                      ? "CTRL"
+                      : "CMD"
+                  }+SHIFT+M)`,
+                  "never",
+                ],
               },
             },
           ],
@@ -58,6 +78,11 @@ runExtension(ID, () => {
       tree: smartPopupConfig,
       key: "search algorithms",
     });
+    const frequency = getSettingValueFromTree({
+      tree: smartPopupConfig,
+      key: "frequency",
+      defaultValue: "always",
+    }).split(" ")[0];
     const blocksWatched: {
       [uid: string]: {
         pattern: string;
@@ -65,50 +90,57 @@ runExtension(ID, () => {
         callback: (before: PullBlock, after: PullBlock) => void;
       };
     } = {};
-    createHTMLObserver({
-      tag: "TEXTAREA",
-      className: "rm-block-input",
-      callback: (t: HTMLTextAreaElement) => {
-        const { blockUid } = getUids(t);
-        if (!blocksWatched[blockUid]) {
-          const pattern = "[:block/string]";
-          const entityId = `[:block/uid "${blockUid}"]`;
-          const injectBlockChanges = smartPopupRender({
-            textarea: t,
-            blockUid,
-            resultsPerPage,
-            algorithms: algorithms.children.map(
-              ({ text, uid, children = [] }) => ({
-                text,
-                uid,
-                fields: children.map((t) => t.text),
-              })
-            ),
-          });
-          blocksWatched[blockUid] = {
-            pattern,
-            entityId,
-            callback: (_, after) => {
-              injectBlockChanges.current(after[":block/string"]);
-            },
-          };
-          window.roamAlphaAPI.data.addPullWatch(
-            pattern,
-            entityId,
-            blocksWatched[blockUid].callback
-          );
-        } else {
-          console.log("im here already");
-        }
-      },
-      removeCallback: (t: HTMLTextAreaElement) => {
-        const { blockUid } = getUids(t);
-        if (blocksWatched[blockUid]) {
-          const { pattern, entityId, callback } = blocksWatched[blockUid];
-          window.roamAlphaAPI.data.removePullWatch(pattern, entityId, callback);
-          delete blocksWatched[blockUid];
-        }
-      },
-    });
+    if (frequency !== "never") {
+      createHTMLObserver({
+        tag: "TEXTAREA",
+        className: "rm-block-input",
+        callback: (t: HTMLTextAreaElement) => {
+          const { blockUid } = getUids(t);
+          if (!blocksWatched[blockUid]) {
+            const pattern = "[:block/string]";
+            const entityId = `[:block/uid "${blockUid}"]`;
+            const injectBlockChanges = smartPopupRender({
+              textarea: t,
+              blockUid,
+              resultsPerPage,
+              algorithms: algorithms.children.map(
+                ({ text, uid, children = [] }) => ({
+                  text,
+                  uid,
+                  fields: children.map((t) => t.text),
+                })
+              ),
+              frequency,
+            });
+            blocksWatched[blockUid] = {
+              pattern,
+              entityId,
+              callback: (_, after) => {
+                injectBlockChanges.current(after[":block/string"]);
+              },
+            };
+            window.roamAlphaAPI.data.addPullWatch(
+              pattern,
+              entityId,
+              blocksWatched[blockUid].callback
+            );
+          } else {
+            console.log("im here already");
+          }
+        },
+        removeCallback: (t: HTMLTextAreaElement) => {
+          const { blockUid } = getUids(t);
+          if (blocksWatched[blockUid]) {
+            const { pattern, entityId, callback } = blocksWatched[blockUid];
+            window.roamAlphaAPI.data.removePullWatch(
+              pattern,
+              entityId,
+              callback
+            );
+            delete blocksWatched[blockUid];
+          }
+        },
+      });
+    }
   });
 });

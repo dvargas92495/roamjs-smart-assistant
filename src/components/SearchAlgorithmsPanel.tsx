@@ -5,18 +5,21 @@ import deleteBlock from "roamjs-components/writes/deleteBlock";
 import getBasicTreeByParentUid from "roamjs-components/queries/getBasicTreeByParentUid";
 import MenuItemSelect from "roamjs-components/components/MenuItemSelect";
 import { render as renderToast } from "roamjs-components/components/Toast";
+import { Controlled as CodeMirror } from "react-codemirror2";
+import "codemirror/mode/javascript/javascript";
 
 const AsyncFunction: FunctionConstructor = new Function(
   `return Object.getPrototypeOf(async function(){}).constructor`
 )();
 
+const JS_REGEX = new RegExp("```javascript\n(.*)```", "s");
+
+type Results = { uid: string; text: string }[];
+
 const ALGORITHMS: {
   name: string;
   fields: { type: "javascript"; name: string; description: string }[];
-  search: (p: {
-    text: string;
-    params: string[];
-  }) => { uid: string; text: string }[];
+  search: (p: { text: string; params: string[] }) => Promise<Results> | Results;
 }[] = [
   {
     name: "Default",
@@ -44,24 +47,28 @@ const ALGORITHMS: {
         description: "Write your own smart assistant logic using javascript",
       },
     ],
-    search: ({ params: [logic] }) => {
+    search: ({ params: [logic = ""], text }) => {
       if (!logic) return [];
       try {
-        const output = new AsyncFunction(logic)();
-        if (!output) {
-          return [];
-        }
-        if (!Array.isArray(output)) {
-          return [];
-        }
-        return output
-          .filter(
-            (o) =>
-              typeof o === "object" &&
-              typeof o.uid === "string" &&
-              typeof o.text === "string"
-          )
-          .map((o) => ({ text: o.text as string, uid: o.uid as string }));
+        const code = JS_REGEX.exec(logic)?.[1] || logic;
+        return Promise.resolve(new AsyncFunction("args", code)({ text })).then(
+          (output) => {
+            if (!output) {
+              return [];
+            }
+            if (!Array.isArray(output)) {
+              return [];
+            }
+            return output
+              .filter(
+                (o) =>
+                  typeof o === "object" &&
+                  typeof o.uid === "string" &&
+                  typeof o.text === "string"
+              )
+              .map((o) => ({ text: o.text as string, uid: o.uid as string }));
+          }
+        );
       } catch (e) {
         renderToast({
           id: "smart-assistant-user-error",
@@ -74,33 +81,39 @@ const ALGORITHMS: {
   },
 ];
 
+const algorithmByName = Object.fromEntries(
+  ALGORITHMS.map(({ name, ...alg }) => [name, alg])
+);
+
+export const runAlgorithm = ({
+  name,
+  params,
+  text,
+}: {
+  name: string;
+  params: string[];
+  text: string;
+}) => {
+  const { search } = algorithmByName[name];
+  return search({ params, text });
+};
+
 const SearchAlgorithmsPanel = ({
   parentUid,
-  uid: inputUid,
+  uid,
 }: {
-  uid?: string;
+  uid: string;
   parentUid: string;
 }) => {
-  const uid = useMemo(() => {
-    if (inputUid) return inputUid;
-    const newUid = window.roamAlphaAPI.util.generateUID();
-    createBlock({
-      node: { text: "hot keys", uid: newUid },
-      parentUid,
-      order: 4,
-    });
-    return newUid;
-  }, [inputUid]);
   const [algorithms, setAlgorithms] = useState(() =>
-    inputUid
-      ? getBasicTreeByParentUid(uid).map(({ text, uid, children = [] }) => ({
-          text,
-          uid,
-          fields: children.map((t) => t.text),
-        }))
-      : []
+    getBasicTreeByParentUid(uid).map(({ text, uid, children = [] }) => ({
+      text,
+      uid,
+      fields: children.map((t) => t.text),
+    }))
   );
   const [newAlgo, setNewAlgo] = useState("0");
+  const [newFields, setNewFields] = useState<string[]>([]);
   return (
     <>
       {algorithms.map((algo) => (
@@ -131,11 +144,15 @@ const SearchAlgorithmsPanel = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          marginBottom: 16,
         }}
       >
         <MenuItemSelect
           activeItem={newAlgo}
-          onItemSelect={(a) => setNewAlgo(a)}
+          onItemSelect={(a) => {
+            setNewFields(ALGORITHMS[Number(a)].fields.map(() => ""));
+            setNewAlgo(a);
+          }}
           transformItem={(i) => ALGORITHMS[Number(i)].name}
           items={ALGORITHMS.map((_, i) => `${i}`)}
         />
@@ -152,20 +169,44 @@ const SearchAlgorithmsPanel = ({
               order: algorithms.length,
               node: {
                 text,
-                children: [],
+                children: newFields.map((text) => ({ text })),
               },
-            }).then((valueUid) =>
+            }).then((valueUid) => {
               setAlgorithms([
                 ...algorithms,
                 {
                   text,
-                  fields: [],
+                  fields: newFields,
                   uid: valueUid,
                 },
-              ])
-            );
+              ]);
+              setNewFields(newFields.map(() => ""));
+            });
           }}
         />
+      </div>
+      <div>
+        {ALGORITHMS[Number(newAlgo)].fields.map((s, index) => (
+          <div key={index} onKeyDown={(e) => e.stopPropagation()}>
+            {s.type === "javascript" && (
+              <CodeMirror
+                value={JS_REGEX.exec(newFields[index])?.[1] || ""}
+                options={{
+                  mode: { name: "javascript" },
+                  lineNumbers: true,
+                  lineWrapping: true,
+                }}
+                onBeforeChange={(_, __, v) => {
+                  setNewFields(
+                    newFields.map((f, j) =>
+                      j === index ? `\`\`\`javascript\n${v}\`\`\`` : f
+                    )
+                  );
+                }}
+              />
+            )}
+          </div>
+        ))}
       </div>
     </>
   );
