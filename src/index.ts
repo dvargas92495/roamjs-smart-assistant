@@ -4,13 +4,13 @@ import { createConfigObserver } from "roamjs-components/components/ConfigPage";
 import addStyle from "roamjs-components/dom/addStyle";
 import createHTMLObserver from "roamjs-components/dom/createHTMLObserver";
 import getUids from "roamjs-components/dom/getUids";
-import { PullBlock } from "roamjs-components/types";
+import type { PullBlock } from "roamjs-components/types";
 import { render as smartPopupRender } from "./components/SmartPopup";
 import SearchAlgorithmsPanel from "./components/SearchAlgorithmsPanel";
 import getSubTree from "roamjs-components/util/getSubTree";
 import getSettingIntFromTree from "roamjs-components/util/getSettingIntFromTree";
 import isControl from "roamjs-components/util/isControl";
-import { getSettingValueFromTree } from "roamjs-components";
+import getSettingValueFromTree from "roamjs-components/util/getSettingValueFromTree";
 
 addStyle(`#unlink-finder-legend {
   margin-left: 4px;
